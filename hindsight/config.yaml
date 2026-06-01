@@ -1,0 +1,35 @@
+name: Hindsight
+description: Agent memory (Hindsight) for Home Assistant
+version: "0.1.0"
+slug: hindsight
+url: https://github.com/bonzanni/hindsight-ha-app
+arch:
+  - amd64
+init: false
+startup: application
+ingress: true
+ingress_port: 8099
+ingress_stream: true
+panel_icon: mdi:brain
+panel_title: Hindsight
+ports:
+  8888/tcp: null
+ports_description:
+  8888/tcp: Hindsight memory API (for other add-ons / LAN clients)
+watchdog: http://[HOST]:[PORT:8888]/health
+backup: cold
+hassio_api: true
+options:
+  openrouter_api_key: ""
+  llm_model: "google/gemini-2.5-flash"
+  llm_reasoning_effort: "low"
+  reranker_enabled: true
+  enable_ui: true
+  log_level: "info"
+schema:
+  openrouter_api_key: password
+  llm_model: str
+  llm_reasoning_effort: list(low|medium|high)
+  reranker_enabled: bool
+  enable_ui: bool
+  log_level: list(debug|info|warning|error|critical)

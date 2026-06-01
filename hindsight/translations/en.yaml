@@ -1,0 +1,26 @@
+configuration:
+  openrouter_api_key:
+    name: OpenRouter API Key
+    description: Your OpenRouter API key (required for the reasoning LLM).
+  llm_model:
+    name: Reasoning Model
+    description: >-
+      OpenRouter model id used for Hindsight's reasoning steps (fact extraction
+      on retain, dialectic/reflect on recall). The best choice is workload-
+      dependent; tune it after integrating with your agent.
+  llm_reasoning_effort:
+    name: Reasoning Effort
+    description: Effort hint for models that support it (low is fastest).
+  reranker_enabled:
+    name: Enable Reranker
+    description: >-
+      Run the local cross-encoder reranker for higher-quality recall. Disable
+      to shave latency off the recall path on low-power hosts.
+  enable_ui:
+    name: Enable Control-Plane UI
+    description: >-
+      Serve the Hindsight memory-browser UI in the sidebar. Disable for a
+      headless, API-only deployment with a smaller memory footprint.
+  log_level:
+    name: Log Level
+    description: Application log verbosity.

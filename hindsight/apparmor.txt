@@ -1,0 +1,45 @@
+#include <tunables/global>
+
+profile hindsight flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  file,
+  signal (send) set=(kill,term,int,hup,cont),
+  capability fowner,
+  capability chown,
+  capability dac_override,
+  capability setuid,
+  capability setgid,
+
+  # S6-Overlay
+  /init ix,
+  /bin/** ix,
+  /usr/bin/** ix,
+  /usr/sbin/** ix,
+  /run/{s6,s6-rc*,service}/** ix,
+  /package/** ix,
+  /command/** ix,
+  /etc/s6-overlay/** rwix,
+  /run/{,**} rwk,
+  /dev/tty rw,
+
+  # Bashio
+  /usr/lib/bashio/** ix,
+  /tmp/** rwk,
+
+  # App: python venv, node, nginx, models
+  /app/** rix,
+  /opt/hindsight/** rix,
+  /usr/lib/python3*/** r,
+
+  # Persistent data (pg0 lives here)
+  /data/** rwk,
+
+  # Network
+  network inet stream,
+  network inet dgram,
+  network unix stream,
+
+  /proc/** r,
+  /sys/** r,
+}
