@@ -9,6 +9,8 @@ reasoning steps; all memory persists under `/data`.
 > Single-arch (`amd64`). The embedded vector store and reasoning models are not
 > built for 32-bit or ARM HA installs.
 
+![Hindsight's control-plane memory browser, served in the Home Assistant sidebar via ingress](assets/hindsight-ui.png)
+
 ## Install
 
 1. In Home Assistant, go to **Settings → Add-ons → Add-on Store**.
