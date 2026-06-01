@@ -6,7 +6,7 @@
 # glibc+python combo. trixie's *system* python is 3.13, so instead of using it we
 # COPY upstream's /usr/local CPython 3.11 (cp311 ABI match for the copied wheels).
 # Base ships bashio + s6-overlay v3, so config.yaml uses init: false.
-ARG BUILD_FROM=ghcr.io/home-assistant/base-debian:trixie
+ARG BUILD_FROM=ghcr.io/home-assistant/base-debian:trixie-2026.05.0
 
 # Pin the upstream Hindsight image by DIGEST (from RECON-NOTES.md) for
 # reproducible COPYs. Bump deliberately.
