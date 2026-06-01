@@ -1,0 +1,20 @@
+#!/command/with-contenv bashio
+# shellcheck shell=bash
+# ==============================================================================
+# Run the Hindsight all-in-one (API + control-plane + embedded pg0) as the
+# non-root 'hindsight' user. Upstream start-all.sh supervises children and
+# performs a WAL-safe shutdown on SIGTERM. HOME=/data so pg0 lives in /data/.pg0.
+# ==============================================================================
+declare ENV_FILE="/data/hindsight/env"
+if [ -f "${ENV_FILE}" ]; then
+    set -a
+    # shellcheck source=/dev/null
+    source "${ENV_FILE}"
+    set +a
+fi
+
+bashio::log.info "Starting Hindsight (API + control-plane + pg0)..."
+export HOME=/data
+exec s6-setuidgid hindsight \
+    env HOME=/data PATH="/app/api/.venv/bin:${PATH}" \
+    /app/start-all.sh
