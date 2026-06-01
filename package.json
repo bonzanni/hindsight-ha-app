@@ -1,0 +1,11 @@
+{
+  "name": "hindsight-ha-app-tests",
+  "private": true,
+  "description": "Dev/test harness for the Hindsight Home Assistant add-on (not shipped in the image).",
+  "scripts": {
+    "test:ingress": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

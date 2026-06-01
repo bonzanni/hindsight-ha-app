@@ -5,3 +5,8 @@ __pycache__/
 .devdata/
 node_modules/
 tests/test-results/
+test-results/
+playwright-report/
+# stray HOME caches from running npx/playwright in a container with HOME=/work
+.npm/
+.local/
