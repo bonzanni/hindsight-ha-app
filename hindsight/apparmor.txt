@@ -30,6 +30,9 @@ profile hindsight flags=(attach_disconnected,mediate_deleted) {
   # App: python venv, node, nginx, models
   /app/** rix,
   /opt/hindsight/** rix,
+  # CPython 3.11 lives in /usr/local (COPY-ed from upstream; trixie's system
+  # python is 3.13). The venv interpreter resolves here, so it must be ix.
+  /usr/local/** rix,
   /usr/lib/python3*/** r,
 
   # Persistent data (pg0 lives here)

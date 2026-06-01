@@ -1,8 +1,12 @@
 # Hindsight HA add-on — hybrid build.
-# Base = HA base-debian:bookworm -> Python 3.11, matching the upstream venv's
-# cp311 ABI (trixie ships 3.13 and would break the copied wheels). Ships
-# bashio + s6-overlay v3, so config.yaml uses init: false.
-ARG BUILD_FROM=ghcr.io/home-assistant/base-debian:bookworm
+# Base = HA base-debian:trixie (glibc 2.41). REQUIRED: pg0 downloads a
+# PostgreSQL 18 + pgvector bundle at runtime whose vector.so needs GLIBC_2.38+;
+# bookworm (glibc 2.36) cannot load it. Upstream itself is python:3.11-slim-trixie
+# (Debian 13, glibc 2.41, CPython 3.11.15 in /usr/local) — we mirror that exact
+# glibc+python combo. trixie's *system* python is 3.13, so instead of using it we
+# COPY upstream's /usr/local CPython 3.11 (cp311 ABI match for the copied wheels).
+# Base ships bashio + s6-overlay v3, so config.yaml uses init: false.
+ARG BUILD_FROM=ghcr.io/home-assistant/base-debian:trixie
 
 # Pin the upstream Hindsight image by DIGEST (from RECON-NOTES.md) for
 # reproducible COPYs. Bump deliberately.
@@ -12,12 +16,17 @@ FROM ${HINDSIGHT_IMAGE} AS upstream
 
 FROM ${BUILD_FROM}
 
-# Runtime deps mirrored from the upstream standalone stage, plus nginx + Node 20.
+# Runtime deps: nginx + Node 20, the API's native libs, and the shared libraries
+# the COPY-ed python.org CPython 3.11 links against (ssl/ffi/sqlite/bz2/lzma/
+# ncurses/readline/uuid/gdbm/expat). On trixie these provide the .so deps the
+# /usr/local interpreter needs; without them `import ssl`/`sqlite3` etc. fail.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates curl procps nginx \
       libxml2 libssl3 libgssapi-krb5-2 libossp-uuid16 \
- && (apt-get install -y --no-install-recommends libicu72 || true) \
+      libffi8 libsqlite3-0 libbz2-1.0 liblzma5 libncursesw6 \
+      libreadline8 zlib1g libuuid1 libgdbm6 libexpat1 \
+ && (apt-get install -y --no-install-recommends libicu76 || apt-get install -y --no-install-recommends libicu72 || true) \
  && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
  && apt-get install -y --no-install-recommends nodejs \
  && rm -rf /var/lib/apt/lists/* \
@@ -42,11 +51,19 @@ COPY --from=upstream /home/hindsight/.cache /opt/hindsight/cache
 # TIKTOKEN_CACHE_DIR below points the library here at runtime.
 COPY --from=upstream /tmp/data-gym-cache /opt/hindsight/cache/tiktoken
 
-# Re-point the venv interpreter at bookworm's python3.11 (upstream slim builder
-# placed it under /usr/local/bin; this HA base has it at /usr/bin).
-RUN ln -sf /usr/bin/python3.11 /app/api/.venv/bin/python \
- && ln -sf python /app/api/.venv/bin/python3 \
- && ln -sf python /app/api/.venv/bin/python3.11
+# Bring upstream's CPython 3.11 (the official python:3.11-slim /usr/local layout)
+# so the cp311 venv runs on trixie, whose system python is 3.13. The venv's
+# pyvenv.cfg has home=/usr/local/bin and bin/python -> /usr/local/bin/python3,
+# so recreating /usr/local exactly like upstream means the venv works unchanged
+# (no interpreter symlink rewrite needed). ldconfig picks up libpython3.11.so.
+COPY --from=upstream /usr/local/bin/python3.11 /usr/local/bin/python3.11
+COPY --from=upstream /usr/local/bin/python3.11-config /usr/local/bin/python3.11-config
+COPY --from=upstream /usr/local/lib/python3.11 /usr/local/lib/python3.11
+COPY --from=upstream /usr/local/lib/libpython3.11.so.1.0 /usr/local/lib/libpython3.11.so.1.0
+COPY --from=upstream /usr/local/lib/libpython3.so /usr/local/lib/libpython3.so
+RUN ln -sf python3.11 /usr/local/bin/python3 \
+ && ln -sf python3 /usr/local/bin/python \
+ && ldconfig
 
 # Caches: offline, and OUT of /data (which is an empty volume on first run).
 #
@@ -61,7 +78,7 @@ ENV HF_HOME=/opt/hindsight/cache/huggingface \
     HF_HUB_OFFLINE=1 \
     TRANSFORMERS_OFFLINE=1 \
     TIKTOKEN_CACHE_DIR=/opt/hindsight/cache/tiktoken \
-    PATH=/app/api/.venv/bin:/usr/bin:/bin:/usr/local/bin \
+    PATH=/app/api/.venv/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
     PYTHONUNBUFFERED=1 \
     NODE_ENV=production \
     TRANSFORMERS_VERBOSITY=error \
