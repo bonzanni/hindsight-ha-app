@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="hindsight/logo.png" alt="Hindsight" width="380">
+</p>
+
 # Hindsight — Home Assistant Add-on
 
 Runs [Hindsight](https://github.com/vectorize-io/hindsight) agent memory
