@@ -2,3 +2,6 @@
 __pycache__/
 .DS_Store
 .worktrees/
+.devdata/
+node_modules/
+tests/test-results/
