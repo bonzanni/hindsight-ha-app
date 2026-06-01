@@ -1,0 +1,7 @@
+#!/command/with-contenv bashio
+# shellcheck shell=bash
+# ==============================================================================
+# nginx ingress front for the Hindsight control-plane (listens on ingress_port).
+# ==============================================================================
+bashio::log.info "Starting nginx ingress front on :8099..."
+exec nginx -c /etc/nginx/hindsight-ingress.conf -g "daemon off;"
