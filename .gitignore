@@ -3,6 +3,10 @@ __pycache__/
 .DS_Store
 .worktrees/
 .devdata/
+# Internal engineering docs are a SEPARATE PRIVATE inner repo (docs/.git ->
+# bonzanni/hindsight-ha-app-docs). Never tracked in this public add-on repo.
+# A .githooks/pre-commit guard (installed by `make setup`) refuses staging docs/.
+docs/
 node_modules/
 tests/test-results/
 test-results/
