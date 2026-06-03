@@ -46,6 +46,9 @@ for i in $(seq 1 60); do
   sleep 1
 done
 
+echo "== seed a 'Test' memory bank (for the bank-navigation regression test) =="
+docker exec hs-smoke sh -c 'printf "%s" "{\"name\":\"Test\"}" | curl -s -o /dev/null -w "PUT bank Test: HTTP %{http_code}\n" -X PUT -H "Content-Type: application/json" --data @- http://127.0.0.1:8888/v1/default/banks/Test'
+
 echo "== start ingress mimic (in add-on netns) =="
 docker run -d --name ingress-mimic --network container:hs-smoke \
   -v "$PWD/tests/ingress-mimic.conf:/etc/nginx/nginx.conf:ro" nginx:stable >/dev/null

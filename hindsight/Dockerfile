@@ -14,6 +14,54 @@ ARG HINDSIGHT_IMAGE=ghcr.io/vectorize-io/hindsight@sha256:e82b2c051784affa732431
 
 FROM ${HINDSIGHT_IMAGE} AS upstream
 
+# ==============================================================================
+# Control-plane builder — rebuild the Next.js CP under a PLACEHOLDER basePath.
+# Upstream ships the CP built with basePath="" (NEXT_PUBLIC_BASE_PATH unset),
+# whose App Router generates root-absolute navigation/RSC URLs that escape HA's
+# dynamic ingress prefix (bank pages 404). next.config.ts reads basePath from
+# NEXT_PUBLIC_BASE_PATH (a supported "reverse proxy" build arg), so we rebuild
+# ONLY the CP, from the SAME pinned upstream revision as HINDSIGHT_IMAGE, with a
+# unique literal placeholder. nginx then sub_filters /__HA_INGRESS__ -> the live
+# X-Ingress-Path at request time (see hindsight-ingress.conf).
+# ==============================================================================
+FROM node:20-slim AS cp-builder
+# Defaults are set HERE (in-stage), not before the first FROM: an ARG declared
+# after a FROM is stage-scoped, so a bare re-declaration resolves to empty.
+# Empty HINDSIGHT_REF -> wrong source revision; empty placeholder -> basePath="".
+ARG HINDSIGHT_REF=779e3140c8faeb3d6662e64bff7b908e9e29c989
+ARG HA_INGRESS_PLACEHOLDER=/__HA_INGRESS__
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+RUN git clone --filter=blob:none https://github.com/vectorize-io/hindsight.git /src \
+ && git -C /src checkout ${HINDSIGHT_REF}
+# Build the TypeScript client SDK the control-plane depends on (workspace build).
+WORKDIR /src
+RUN npm ci --ignore-scripts -w @vectorize-io/hindsight-client \
+ && npm run build -w @vectorize-io/hindsight-client
+# Build the control-plane under the monorepo path its build:standalone expects.
+# Mirrors upstream docker/standalone/Dockerfile's cp-builder stage.
+WORKDIR /app/memory-poc/hindsight-control-plane
+RUN cp /src/hindsight-control-plane/package.json ./ \
+ && sed -i '/"@vectorize-io\/hindsight-client":/d' package.json \
+ && npm install
+RUN cp -a /src/hindsight-control-plane/. ./ \
+ && rm -f package-lock.json \
+ && sed -i '/"@vectorize-io\/hindsight-client":/d' package.json \
+ && mkdir -p ./node_modules/@vectorize-io \
+ && rm -rf ./node_modules/@vectorize-io/hindsight-client \
+ && cp -a /src/hindsight-clients/typescript ./node_modules/@vectorize-io/hindsight-client
+ENV NEXT_PUBLIC_BASE_PATH=${HA_INGRESS_PLACEHOLDER}
+RUN npm exec -- next build \
+ && STANDALONE_ROOT=$(find .next/standalone -path '*/node_modules' -prune -o -name 'server.js' -print | head -1 | xargs dirname) \
+ && mkdir -p standalone \
+ && cp -r "$STANDALONE_ROOT"/* standalone/ \
+ && cp -r "$STANDALONE_ROOT"/.next standalone/.next \
+ && if [ -d ".next/standalone/node_modules" ] && [ "$STANDALONE_ROOT" != ".next/standalone" ]; then cp -r .next/standalone/node_modules standalone/node_modules; fi \
+ && cp -r .next/static standalone/.next/static \
+ && mkdir -p standalone/public && (cp -r public/* standalone/public/ 2>/dev/null || true) \
+ && test -f standalone/server.js && test -f standalone/.next/BUILD_ID
+
 FROM ${BUILD_FROM}
 
 # Runtime deps: nginx + Node 20, the API's native libs, and the shared libraries
@@ -37,8 +85,13 @@ RUN useradd -m -s /bin/bash hindsight
 
 # Bring prebuilt artifacts from the upstream image.
 COPY --from=upstream /app/api /app/api
-COPY --from=upstream /app/control-plane /app/control-plane
 COPY --from=upstream /app/start-all.sh /app/start-all.sh
+
+# Control-plane: the placeholder-basePath rebuild (cp-builder), NOT the upstream
+# image's basePath="" build. Layout mirrors upstream's cp-only stage.
+COPY --from=cp-builder /app/memory-poc/hindsight-control-plane/standalone /app/control-plane
+COPY --from=cp-builder /app/memory-poc/hindsight-control-plane/.next/static /app/control-plane/.next/static
+COPY --from=cp-builder /app/memory-poc/hindsight-control-plane/public /app/control-plane/public
 
 # Preloaded HuggingFace model cache (embeddings + reranker).
 # Models confirmed in RECON-NOTES.md:
