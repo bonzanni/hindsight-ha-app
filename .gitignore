@@ -14,3 +14,6 @@ playwright-report/
 # stray HOME caches from running npx/playwright in a container with HOME=/work
 .npm/
 .local/
+
+# local prod-console config (host/slug details)
+.claude/
