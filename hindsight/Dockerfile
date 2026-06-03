@@ -10,6 +10,9 @@ ARG BUILD_FROM=ghcr.io/home-assistant/base-debian:trixie-2026.05.0
 
 # Pin the upstream Hindsight image by DIGEST (from RECON-NOTES.md) for
 # reproducible COPYs. Bump deliberately.
+# !! When bumping this digest, ALSO bump HINDSIGHT_REF (cp-builder, below) to the
+#    SAME upstream revision so the rebuilt control-plane matches the COPY-ed API,
+#    then re-run tests/run-ingress.sh (the CP's fetch/asset shapes can change).
 ARG HINDSIGHT_IMAGE=ghcr.io/vectorize-io/hindsight@sha256:e82b2c051784affa73243108c06402655043999e362bb3b7226b4da1000e1660
 
 FROM ${HINDSIGHT_IMAGE} AS upstream
@@ -28,6 +31,8 @@ FROM node:20-slim AS cp-builder
 # Defaults are set HERE (in-stage), not before the first FROM: an ARG declared
 # after a FROM is stage-scoped, so a bare re-declaration resolves to empty.
 # Empty HINDSIGHT_REF -> wrong source revision; empty placeholder -> basePath="".
+# !! Keep HINDSIGHT_REF in lockstep with the HINDSIGHT_IMAGE digest above (same
+#    upstream revision). v0.7.1 = 779e3140; bump both together.
 ARG HINDSIGHT_REF=779e3140c8faeb3d6662e64bff7b908e9e29c989
 ARG HA_INGRESS_PLACEHOLDER=/__HA_INGRESS__
 RUN apt-get update \
