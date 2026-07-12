@@ -46,6 +46,24 @@ entirely on your Home Assistant host.
 - **log_level**: Controls application log verbosity. One of `debug`, `info`
   (default), `warning`, `error`, or `critical`.
 
+## Recall Latency and the `budget` Parameter
+
+The add-on is tuned for low-power CPU-only hosts (e.g. Intel N150):
+
+- The recall `budget` request parameter (`low`/`mid`/`high`) controls
+  *retrieval breadth* — how many candidates each retrieval method fetches
+  (100/300/1000).
+- Reranking depth is capped separately at **100 candidates** (the RRF
+  top-100), regardless of `budget`. On a grown memory bank all budgets
+  therefore cost roughly the same in rerank CPU; pick `budget` by how wide
+  you want retrieval to look, not by latency.
+- A recall that cannot complete within **15 seconds** returns HTTP 504
+  instead of silently overrunning. Design API clients with a timeout a few
+  seconds above that (e.g. 20s) and treat 504 as "degrade now, retry later".
+
+Expected recall latency on an N150-class host at a few-thousand-memory bank:
+~2-4s, worst case under concurrent background work well below 15s.
+
 ## Sidebar UI
 
 When `enable_ui` is enabled the Hindsight memory browser appears as a sidebar

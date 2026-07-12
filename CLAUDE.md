@@ -10,6 +10,10 @@ supervised by **s6-overlay v3** with an **nginx** front for HA ingress.
 
 ## Where things are
 - **Build:** `hindsight/Dockerfile` (hybrid COPY).
+- **Upstream patches:** `hindsight/patches/*.patch` — applied with `patch -p1`
+  to the COPY-ed API inside the Dockerfile (recall deadline, worker drain).
+  Regenerate against the new source whenever `HINDSIGHT_IMAGE` is bumped; the
+  build fails loudly if they no longer apply.
 - **Add-on manifest:** `hindsight/config.yaml` (version lives here). User docs:
   `hindsight/DOCS.md`. Changelog: `hindsight/CHANGELOG.md`. AppArmor:
   `hindsight/apparmor.txt`.
@@ -31,7 +35,7 @@ make ingress      # Playwright: control-plane renders under an ingress prefix, n
 make lint         # hadolint + shellcheck (via Docker)
 ```
 The OpenRouter key is in 1Password — `source ~/.op-token` then
-`export OPENROUTER_KEY="$(op read 'op://Claude Code/OpenRouter API Key/credential')"`.
+`export OPENROUTER_KEY="$(op read 'op://Claude Code/OpenRouter/credential')"`.
 Playwright runs inside the official image (the host lacks browser libs like
 `libnspr4`); the ingress mimic runs in the add-on's network namespace so it
 reaches the allow-listed `127.0.0.1:8099`.

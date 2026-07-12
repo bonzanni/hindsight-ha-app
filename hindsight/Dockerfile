@@ -75,7 +75,7 @@ FROM ${BUILD_FROM}
 # /usr/local interpreter needs; without them `import ssl`/`sqlite3` etc. fail.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates curl procps nginx \
+      ca-certificates curl procps nginx patch \
       libxml2 libssl3 libgssapi-krb5-2 libossp-uuid16 \
       libffi8 libsqlite3-0 libbz2-1.0 liblzma5 libncursesw6 \
       libreadline8 zlib1g libuuid1 libgdbm6 libexpat1 \
@@ -91,6 +91,14 @@ RUN useradd -m -s /bin/bash hindsight
 # Bring prebuilt artifacts from the upstream image.
 COPY --from=upstream /app/api /app/api
 COPY --from=upstream /app/start-all.sh /app/start-all.sh
+
+# Patch the COPY-ed API (editable install -> source lives at /app/api/hindsight_api):
+# recall handler deadline + configurable worker drain timeout. See the patch
+# header for rationale. patch(1) fails the build if the pinned source drifts,
+# so a HINDSIGHT_IMAGE bump that invalidates the patch cannot ship silently.
+COPY patches/recall-deadline-worker-drain.patch /tmp/hindsight-patches/
+RUN patch -p1 -d /app/api < /tmp/hindsight-patches/recall-deadline-worker-drain.patch \
+ && rm -rf /tmp/hindsight-patches
 
 # Control-plane: the placeholder-basePath rebuild (cp-builder), NOT the upstream
 # image's basePath="" build. Layout mirrors upstream's cp-only stage.
@@ -144,14 +152,57 @@ ENV HF_HOME=/opt/hindsight/cache/huggingface \
     TOKENIZERS_PARALLELISM=false \
     HINDSIGHT_API_HOST=0.0.0.0 \
     HINDSIGHT_API_PORT=8888 \
-    HINDSIGHT_CP_DATAPLANE_API_URL=http://localhost:8888 \
-    S6_KILL_GRACETIME=30000 \
-    S6_SERVICES_GRACETIME=30000
+    HINDSIGHT_CP_DATAPLANE_API_URL=http://localhost:8888
+
+# s6-overlay shutdown grace. WAL safety comes from the ORDERED service stop
+# (s6-rc waits for hindsight-app; start-all.sh forwards TERM and waits for the
+# API to drain + stop pg0 — measured ~4s idle). S6_KILL_GRACETIME is only the
+# stage-3 TERM->KILL sweep for stragglers, and s6 sits out the FULL value
+# before exiting: at the previous 30000 the container needed 35s to stop, so
+# the Supervisor's stop grace expired first -> SIGKILL (exit 137) on every
+# nightly cold backup even when idle. 5s is ample for stragglers.
+# S6_SERVICES_GRACETIME only applies to legacy /etc/services.d (unused here).
+ENV S6_KILL_GRACETIME=5000 \
+    S6_SERVICES_GRACETIME=10000
+
+# Recall-latency + shutdown tuning for the target host class (N150: 4 E-cores,
+# CPU-only). Measured on-device at v0.1.1: reranking 300 pairs took ~6.3s idle
+# and ~25s each for two concurrent recalls (47 threads — every torch predict
+# spawns its own ~4-thread OpenMP team), blowing consumers' 20s client budget.
+#   OMP_WAIT_POLICY:            stop libgomp idle-spin burn between batches
+#   RERANKER_MAX_CANDIDATES:    rerank depth cap 300 -> 100 (~3x less CPU;
+#                               final top-k comes from RRF top-100)
+#   BUCKET_BATCHING:            upstream opt-in, length-sorted batches,
+#                               quality-identical, 36-54% faster
+#   LOCAL_MAX_CONCURRENT=1:     serialize cross-encoder calls — one rerank
+#                               gets all 4 cores; no thread-thrash collapse
+#   CONSOLIDATION_MAX_SLOTS=1:  at most one background consolidation competing
+#   RECALL_HANDLER_TIMEOUT=15:  fail recalls fast (504) before the consumer's
+#                               20s aiohttp budget (patched-in, see patches/)
+#   WORKER_SHUTDOWN_TIMEOUT=8:  short worker drain so add-on stop beats the
+#                               Supervisor kill grace (patched-in)
+ENV OMP_WAIT_POLICY=PASSIVE \
+    HINDSIGHT_API_RERANKER_MAX_CANDIDATES=100 \
+    HINDSIGHT_API_RERANKER_LOCAL_BUCKET_BATCHING=true \
+    HINDSIGHT_API_RERANKER_LOCAL_MAX_CONCURRENT=1 \
+    HINDSIGHT_API_WORKER_CONSOLIDATION_MAX_SLOTS=1 \
+    HINDSIGHT_API_RECALL_HANDLER_TIMEOUT=15 \
+    HINDSIGHT_API_WORKER_SHUTDOWN_TIMEOUT=8
 
 RUN chown -R hindsight:hindsight /app /opt/hindsight
 
 # Build-time smoke: the copied venv must import on this base's python3.11.
 RUN /app/api/.venv/bin/python -c "import torch, sentence_transformers, hindsight_api; print('venv import OK')"
+
+# Build-time smoke: the patched http.py must import (syntax) and actually
+# contain both patched-in env knobs (guards against a partial patch apply).
+RUN /app/api/.venv/bin/python -c "\
+import inspect; \
+import hindsight_api.api.http as m; \
+src = inspect.getsource(m); \
+assert 'HINDSIGHT_API_RECALL_HANDLER_TIMEOUT' in src, 'recall deadline patch missing'; \
+assert 'HINDSIGHT_API_WORKER_SHUTDOWN_TIMEOUT' in src, 'worker drain patch missing'; \
+print('patched http.py OK')"
 
 # Build-time smoke: load embedding model offline from baked HF cache.
 # SentenceTransformer resolves via HF_HOME (no cache_folder arg in upstream source).

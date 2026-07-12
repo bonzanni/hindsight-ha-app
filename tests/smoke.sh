@@ -12,10 +12,11 @@ echo "== build =="
 docker build -t "$IMG" hindsight/
 
 run() {
+  # Extra docker args (e.g. -e overrides) may be passed through.
   docker run -d --name hs-smoke \
     -p 8888:8888 -p 8099:8099 \
     -e HINDSIGHT_API_LLM_API_KEY="$OPENROUTER_KEY" \
-    -v "$DATA:/data" "$IMG"
+    -v "$DATA:/data" "$@" "$IMG"
 }
 
 wait_health() {
@@ -69,6 +70,27 @@ esac
 hcode=$(docker exec hs-smoke curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8099/health)
 echo "api /health via nginx (internal): HTTP $hcode"
 [ "$hcode" = "200" ] || { echo "FAIL: /health via nginx = $hcode"; docker logs hs-smoke | tail -40; exit 1; }
+
+echo "== recall handler deadline (patched-in) returns 504 fast =="
+# Rebooted with a 1ms deadline: any real recall must trip it deterministically
+# (query embedding alone takes ~20ms). Proves the deadline patch is live.
+docker rm -f hs-smoke
+run -e HINDSIGHT_API_RECALL_HANDLER_TIMEOUT=0.001; wait_health
+dcode=$(docker exec hs-smoke curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+  -X POST http://127.0.0.1:8888/v1/default/banks/smoketest/memories/recall \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"deadline probe","budget":"low","max_tokens":256}')
+echo "recall with 1ms deadline: HTTP $dcode"
+[ "$dcode" = "504" ] || { echo "FAIL: expected 504, got $dcode"; docker logs hs-smoke | tail -40; exit 1; }
+
+echo "== clean SIGTERM stop (bounded worker drain; no exit 137) =="
+t0=$(date +%s)
+docker stop -t 60 hs-smoke >/dev/null
+t1=$(date +%s)
+ec=$(docker inspect -f '{{.State.ExitCode}}' hs-smoke)
+echo "stop took $((t1-t0))s, container exit code $ec"
+[ "$ec" = "0" ] || { echo "FAIL: exit code $ec (expected 0 — SIGKILL regression?)"; exit 1; }
+[ $((t1-t0)) -le 30 ] || { echo "FAIL: stop took $((t1-t0))s (>30s)"; exit 1; }
 
 docker rm -f hs-smoke
 echo "SMOKE PASS"

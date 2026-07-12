@@ -1,0 +1,75 @@
+Recall handler deadline + bounded worker drain, for the Hindsight HA add-on.
+
+Applied in the Dockerfile with `patch -p1 -d /app/api` against the API package
+COPY-ed from the digest-pinned upstream image (v0.7.1 / 779e3140; the package
+is an editable install, so the source lives at /app/api/hindsight_api). When
+bumping HINDSIGHT_IMAGE, regenerate this patch against the new source — the
+build fails loudly here if the context drifts.
+
+Two changes, both no-ops unless their env var is set:
+
+1. api/http.py api_recall: wrap recall_async in asyncio.wait_for when
+   HINDSIGHT_API_RECALL_HANDLER_TIMEOUT (seconds) > 0. On expiry the recall
+   task is cancelled and the pre-existing `except (asyncio.TimeoutError,
+   TimeoutError)` branch returns 504, so callers fail fast instead of the
+   server silently working past the caller's own timeout (observed on the
+   N150: aborted clients leave doomed work running to completion, so queues
+   grow without bound during busy evenings).
+
+2. api/http.py lifespan: make the worker poller drain timeout configurable
+   via HINDSIGHT_API_WORKER_SHUTDOWN_TIMEOUT (was hardcoded 30.0s). With the
+   HA Supervisor's default 10s docker-stop grace (config.yaml `timeout`), a
+   30s drain guaranteed SIGKILL (exit 137) whenever consolidation/retain was
+   in flight at stop time — e.g. every nightly cold backup. In-flight worker
+   tasks are re-queued/retried after restart, so a short drain is safe.
+
+--- a/hindsight_api/api/http.py	2026-07-12 08:18:32.288595189 +0200
++++ b/hindsight_api/api/http.py	2026-07-12 08:19:24.277470245 +0200
+@@ -8,6 +8,7 @@
+ import asyncio
+ import json
+ import logging
++import os
+ import re
+ import uuid
+ from contextlib import asynccontextmanager
+@@ -2699,7 +2700,12 @@
+ 
+         # Shutdown worker poller if running
+         if poller is not None:
+-            await poller.shutdown_graceful(timeout=30.0)
++            # In-flight tasks (consolidation, retain) are re-queued/retried
++            # after restart, so a short drain keeps container stop well under
++            # the supervisor kill grace instead of eating it all (exit 137).
++            await poller.shutdown_graceful(
++                timeout=float(os.getenv("HINDSIGHT_API_WORKER_SHUTDOWN_TIMEOUT", "30"))
++            )
+             if poller_task is not None:
+                 poller_task.cancel()
+                 try:
+@@ -3278,7 +3284,7 @@
+                 "recall", bank_id=bank_id, source="api", budget=request.budget.value, max_tokens=request.max_tokens
+             ):
+                 recall_start = time.time()
+-                core_result = await app.state.memory.recall_async(
++                _recall_coro = app.state.memory.recall_async(
+                     bank_id=bank_id,
+                     query=request.query,
+                     budget=request.budget,
+@@ -3298,6 +3304,16 @@
+                     tags_match=request.tags_match,
+                     tag_groups=request.tag_groups,
+                 )
++                # End-to-end handler deadline (seconds). 0/unset preserves the
++                # historical wait-forever behavior. On expiry the recall task is
++                # cancelled and the existing TimeoutError handler below returns
++                # 504, so callers fail fast instead of silently overrunning
++                # their own client timeout.
++                _handler_deadline = float(os.getenv("HINDSIGHT_API_RECALL_HANDLER_TIMEOUT", "0") or "0")
++                if _handler_deadline > 0:
++                    core_result = await asyncio.wait_for(_recall_coro, timeout=_handler_deadline)
++                else:
++                    core_result = await _recall_coro
+ 
+             # Convert core MemoryFact objects to API RecallResult objects (excluding internal metrics)
+             def _fact_to_result(fact: "MemoryFact") -> RecallResult:
