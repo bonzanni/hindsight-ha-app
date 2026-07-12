@@ -12,7 +12,7 @@ jobs:
   hadolint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Lint Dockerfile
         uses: hadolint/hadolint-action@v3.1.0
         with:
@@ -27,7 +27,7 @@ jobs:
   shellcheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: ShellCheck s6 + test scripts
         run: |
           sudo apt-get update && sudo apt-get install -y shellcheck
@@ -46,7 +46,7 @@ jobs:
     name: Home Assistant app metadata
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Run Home Assistant App Lint
         uses: frenck/action-addon-linter@v2.21
         with:
@@ -56,7 +56,7 @@ jobs:
     name: AppArmor policy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Parse policy and require bidirectional signals
         run: |
           set -euo pipefail
@@ -69,7 +69,7 @@ jobs:
     name: Repository contracts
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Run packaging, documentation, and CI contracts
         run: |
           make contracts
