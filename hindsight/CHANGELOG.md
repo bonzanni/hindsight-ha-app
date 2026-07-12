@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.2.2
+
+No functional change from 0.2.1 — a version bump whose sole purpose is to make
+the Supervisor re-run its AppArmor profile load.
+
+Background: 0.2.1's correct `signal (send,receive)` profile was stored and
+validated by the Supervisor, but the host kept enforcing the old send-only
+profile. Root cause was a stale AppArmor **compile cache** on the host
+(`/data/apparmor/cache/<kernel-features>/5884eb17_hindsight`): the running
+kernel loaded a months-old send-only binary and never recompiled from the
+updated text, so update/restart/reinstall/reboot all failed to apply the fix.
+Clearing the stale cache entries plus an add-on update (which is the only
+operation that reliably re-invokes `apparmor_parser`) forces a recompile from
+the corrected text. See the AppArmor note in `apparmor.txt`.
+
 ## 0.2.1
 
 Fix the real cause of the SIGKILL-on-stop (exit 137) that 0.2.0's shutdown
