@@ -3,13 +3,16 @@
 # and that pg0 data persists across a container restart.
 set -euo pipefail
 
+TESTS_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=tests/lib/test-image.sh
+source "$TESTS_DIR/lib/test-image.sh"
+
 : "${OPENROUTER_KEY:?Set OPENROUTER_KEY to run the smoke test}"
-IMG=hindsight-addon:dev
+IMG=$(test_image_ref)
 DATA="$(pwd)/.devdata"
 rm -rf "$DATA"; mkdir -p "$DATA"
 
-echo "== build =="
-docker build -t "$IMG" hindsight/
+prepare_test_image hindsight/
 
 run() {
   # Extra docker args (e.g. -e overrides) may be passed through.

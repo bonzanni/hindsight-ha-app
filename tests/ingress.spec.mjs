@@ -10,7 +10,31 @@ const PREFIX = new URL(BASE).pathname; // /hassio-ingress-test/
 // and 404s on the real HA frontend.
 function trackBroken(page) {
   const bad = [];
-  page.on('requestfailed', (r) => bad.push(`FAILED ${r.url()}`));
+  page.on('requestfailed', (r) => {
+    const u = r.url();
+    const headers = r.headers();
+    const isOrigin = u.startsWith(ORIGIN);
+    const path = isOrigin ? u.slice(ORIGIN.length) : u;
+    const escaped = isOrigin && !path.startsWith(PREFIX);
+    // Next.js speculatively prefetches every visible App Router link and may
+    // cancel unused RSC prefetches. Chromium reports those intentional
+    // cancellations as requestfailed/net::ERR_ABORTED. Ignore only an
+    // explicitly marked, in-prefix RSC prefetch; real navigation/asset
+    // failures and escaped prefetches remain release blockers.
+    const expectedPrefetchAbort =
+      r.failure()?.errorText === 'net::ERR_ABORTED' &&
+      headers['next-router-prefetch'] === '1' &&
+      headers.rsc === '1' &&
+      isOrigin &&
+      !escaped;
+    if (expectedPrefetchAbort) return;
+    bad.push(
+      `FAILED ${r.failure()?.errorText ?? 'unknown'}` +
+      ` prefetch=${headers['next-router-prefetch'] ?? '-'}` +
+      ` segment=${headers['next-router-segment-prefetch'] ?? '-'}` +
+      ` rsc=${headers.rsc ?? '-'} ${u}`,
+    );
+  });
   page.on('response', (r) => {
     const u = r.url();
     const isOrigin = u.startsWith(ORIGIN);

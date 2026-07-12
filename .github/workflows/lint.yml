@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   hadolint:
     runs-on: ubuntu-latest
@@ -34,7 +37,40 @@ jobs:
           mapfile -t files < <(
             find hindsight/rootfs/etc/s6-overlay -type f \
               \( -name '*.sh' -o -name run -o -name finish -o -name up \)
-            printf '%s\n' tests/smoke.sh tests/run-ingress.sh
+            find tests -type f -name '*.sh' -print
           )
           echo "Linting: ${files[*]}"
           shellcheck -s bash -e SC1008 "${files[@]}"
+
+  home_assistant:
+    name: Home Assistant app metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Home Assistant App Lint
+        uses: frenck/action-addon-linter@v2.21
+        with:
+          path: "./hindsight"
+
+  apparmor:
+    name: AppArmor policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse policy and require bidirectional signals
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y apparmor-utils
+          grep -Eq '^[[:space:]]*signal[[:space:]]*\([^)]*(send[^)]*receive|receive[^)]*send)[^)]*\)' hindsight/apparmor.txt
+          apparmor_parser -Q hindsight/apparmor.txt
+
+  contract:
+    name: Repository contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run packaging, documentation, and CI contracts
+        run: |
+          make contracts
+          python3 tests/test_ci_contract.py

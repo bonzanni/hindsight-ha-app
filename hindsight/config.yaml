@@ -1,14 +1,13 @@
 name: Hindsight
 description: Agent memory (Hindsight) for Home Assistant
-version: "0.2.2"
+version: "0.3.0"
 slug: hindsight
 url: https://github.com/bonzanni/hindsight-ha-app
+image: "ghcr.io/bonzanni/hindsight"
 arch:
   - amd64
 init: false
-startup: application
 ingress: true
-ingress_port: 8099
 ingress_stream: true
 panel_icon: mdi:brain
 panel_title: Hindsight
@@ -16,7 +15,6 @@ ports:
   8888/tcp: null
 ports_description:
   8888/tcp: Hindsight memory API (for other add-ons / LAN clients)
-watchdog: http://[HOST]:[PORT:8888]/health
 backup: cold
 # Supervisor docker-stop grace (default 10s). Shutdown = uvicorn drain (<=5s)
 # + worker drain (8s, HINDSIGHT_API_WORKER_SHUTDOWN_TIMEOUT) + pg0 checkpoint;

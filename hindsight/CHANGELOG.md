@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.3.0
+
+Hindsight now installs from prebuilt, Cosign-signed GHCR images instead of
+compiling the hybrid image on the Home Assistant host.
+
+- Publish `ghcr.io/bonzanni/hindsight:<version>` and `latest` through a generic
+  OCI manifest. The release remains amd64-only; aarch64 needs a separate port
+  of the pinned upstream artifacts.
+- Add a versioned-main GitHub Actions release pipeline: pull requests validate
+  the amd64 hybrid build, while a version bump merged to `main` publishes and
+  verifies the signed image before creating the matching git tag and GitHub
+  Release from this changelog section.
+- Add OCI and Home Assistant image metadata, the current HA app linter, action
+  dependency maintenance, and checks tying the manifest version to the image
+  and release tag.
+- Keep ingress on its Home Assistant default port 8099 while removing the
+  redundant manifest value, and replace obsolete Supervisor `watchdog`
+  metadata with the current Docker `HEALTHCHECK` against the same `/health`
+  endpoint. API port 8888 and health supervision remain in place.
+- Let the smoke and Playwright ingress harnesses consume an exact prebuilt
+  image through `TEST_IMAGE`, while retaining direct local `docker build`
+  testing and the pinned `base-debian:trixie` hybrid Dockerfile.
+- Strengthen AppArmor validation to require both signal directions and add a
+  real HAOS acceptance/reproducer procedure for the Supervisor compiled-profile
+  cache defect. The app profile is not broadened and the container never
+  mutates host AppArmor state.
+
+Updating from 0.2.2 preserves Supervisor options and the existing `/data`
+volume, including pg0 memory data.
+
 ## 0.2.2
 
 No functional change from 0.2.1 — a version bump whose sole purpose is to make

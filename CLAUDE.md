@@ -34,6 +34,11 @@ make smoke        # build + boot: /health, pg0 persists across restart, ingress 
 make ingress      # Playwright: control-plane renders under an ingress prefix, no broken assets
 make lint         # hadolint + shellcheck (via Docker)
 ```
+Set `TEST_IMAGE=ghcr.io/bonzanni/hindsight:<version>` to make either runtime
+harness pull and use that prebuilt image while skipping `docker build` (prefer
+an immutable digest for release evidence). For a local build,
+`hindsight/Dockerfile` is the source of truth and can be built directly with
+`docker build -t hindsight-addon:dev hindsight/`; there is no `build.yaml`.
 The OpenRouter key is in 1Password — `source ~/.op-token` then
 `export OPENROUTER_KEY="$(op read 'op://Claude Code/OpenRouter/credential')"`.
 Playwright runs inside the official image (the host lacks browser libs like
@@ -55,9 +60,20 @@ upstream's `/usr/local` CPython 3.11 because trixie's *system* python is 3.13.
   tracks the real mode. Don't commit spurious mode changes.
 
 ## Release flow
-1. Bump `version:` in `hindsight/config.yaml` and prepend a
-   `hindsight/CHANGELOG.md` entry.
-2. Commit `release: vX.Y.Z (<summary>)`, tag `vX.Y.Z`, push.
+1. Branch from `main`.
+2. Bump `version:` in `hindsight/config.yaml` and prepend an exact
+   `## X.Y.Z` section to `hindsight/CHANGELOG.md`.
+3. Commit `release: vX.Y.Z (<summary>)`, push, and merge after CI passes.
+4. Merging to `main` auto-publishes the signed GHCR version/`latest` images,
+   verifies the generic amd64 manifest, then creates `vX.Y.Z` and the GitHub
+   Release from that changelog section. Do not tag manually.
+
+The public image remains amd64-only. Do not add aarch64 to `config.yaml`, use
+an `{arch}` image placeholder, or introduce legacy `build.yaml`; the upstream
+CPython/native wheels and model artifacts need a separate aarch64 port first.
+The HA app linter treats `ingress_port: 8099` as a redundant default and
+`watchdog` as obsolete; keep nginx on 8099 and the Dockerfile `/health`
+`HEALTHCHECK` instead of restoring those manifest keys.
 
 Commit author email is the GitHub noreply (`3899230+bonzanni@users.noreply.github.com`),
 not a private address — GitHub blocks pushing the private email.

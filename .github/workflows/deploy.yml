@@ -1,0 +1,393 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "hindsight/**"
+      - ".github/workflows/deploy.yml"
+  pull_request:
+    paths:
+      - "hindsight/**"
+      - ".github/workflows/deploy.yml"
+
+permissions:
+  contents: read
+
+# A main-branch publication owns the mutable version/latest tags until its
+# release is complete. PR builds remain independent of that publication lock.
+concurrency:
+  group: deploy-${{ github.event_name == 'push' && 'publication' || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare metadata
+    runs-on: ubuntu-latest
+    outputs:
+      architectures: ${{ steps.info.outputs.architectures }}
+      build_matrix: ${{ steps.matrix.outputs.matrix }}
+      description: ${{ steps.normalize.outputs.description }}
+      image: ${{ steps.normalize.outputs.image }}
+      image_name: ${{ steps.normalize.outputs.image_name }}
+      name: ${{ steps.normalize.outputs.name }}
+      registry_prefix: ${{ steps.normalize.outputs.registry_prefix }}
+      url: ${{ steps.normalize.outputs.url }}
+      version: ${{ steps.normalize.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Read app information
+        id: info
+        uses: home-assistant/actions/helpers/info@master
+        with:
+          path: "./hindsight"
+
+      - name: Normalize and validate app information
+        id: normalize
+        shell: bash
+        env:
+          RAW_ARCHITECTURES: ${{ steps.info.outputs.architectures }}
+          RAW_IMAGE: ${{ steps.info.outputs.image }}
+          RAW_VERSION: ${{ steps.info.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # The info helper preserves YAML scalar quotes. Remove one matching
+          # outer quote pair before values become image tags or labels.
+          normalize_scalar() {
+            local value=$1
+            if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+              value=${value#\"}
+              value=${value%\"}
+            elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+              value=${value#\'}
+              value=${value%\'}
+            fi
+            printf '%s' "$value"
+          }
+
+          read_config_scalar() {
+            local key=$1
+            local count
+            local value
+            count=$(grep -c "^${key}:" hindsight/config.yaml || true)
+            if [[ "$count" -ne 1 ]]; then
+              echo "config.yaml must contain exactly one ${key} key" >&2
+              exit 1
+            fi
+            value=$(sed -n "s/^${key}:[[:space:]]*//p" hindsight/config.yaml)
+            if [[ -z "$value" ]]; then
+              echo "config.yaml ${key} must have a non-empty single-line value" >&2
+              exit 1
+            fi
+            normalize_scalar "$value"
+          }
+
+          image=$(normalize_scalar "$RAW_IMAGE")
+          version=$(normalize_scalar "$RAW_VERSION")
+          # helpers/info exposes the build-critical architectures, image, and
+          # version values. Read label-only scalars from the same config file.
+          name=$(read_config_scalar name)
+          description=$(read_config_scalar description)
+          url=$(read_config_scalar url)
+
+          if [[ "$image" != "ghcr.io/bonzanni/hindsight" ]]; then
+            echo "config.yaml image must be exactly ghcr.io/bonzanni/hindsight" >&2
+            exit 1
+          fi
+          if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "config.yaml version must be an unprefixed X.Y.Z semantic version" >&2
+            exit 1
+          fi
+          if [[ "$RAW_ARCHITECTURES" != '["amd64"]' ]]; then
+            echo "This pipeline intentionally supports exactly amd64; got: $RAW_ARCHITECTURES" >&2
+            exit 1
+          fi
+          if [[ -z "$name" || -z "$description" || -z "$url" || "$url" == "null" ]]; then
+            echo "name, description, and url must be non-empty image labels" >&2
+            exit 1
+          fi
+
+          {
+            echo "image=$image"
+            echo "image_name=${image##*/}"
+            echo "registry_prefix=${image%/*}"
+            echo "version=$version"
+            echo "name=$name"
+            echo "description=$description"
+            echo "url=$url"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Refuse to overwrite a release version
+        if: github.event_name == 'push'
+        env:
+          VERSION: ${{ steps.normalize.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          tag_object=$(git ls-remote --tags origin "refs/tags/${tag}" | awk '{print $1}')
+          tag_commit=$(git ls-remote --tags origin "refs/tags/${tag}^{}" | awk '{print $1}')
+          if [[ -n "$tag_object" ]]; then
+            tag_commit=${tag_commit:-$tag_object}
+            if [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
+              echo "Release tag ${tag} exists at a different commit (${tag_commit}); refusing to overwrite its image" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Prepare amd64 matrix
+        id: matrix
+        uses: home-assistant/builder/actions/prepare-multi-arch-matrix@2026.06.0
+        with:
+          architectures: ${{ steps.info.outputs.architectures }}
+          image-name: ${{ steps.normalize.outputs.image_name }}
+          registry-prefix: ${{ steps.normalize.outputs.registry_prefix }}
+
+  build_pr:
+    name: Validate ${{ matrix.arch }} image
+    if: github.event_name == 'pull_request'
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.build_matrix) }}
+    steps:
+      - uses: actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Build without publishing
+        uses: home-assistant/builder/actions/build-image@2026.06.0
+        with:
+          arch: ${{ matrix.arch }}
+          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          context: "./hindsight"
+          image: ${{ matrix.image }}
+          image-tags: ${{ needs.prepare.outputs.version }}
+          labels: |
+            io.hass.type=app
+            io.hass.name=${{ needs.prepare.outputs.name }}
+            io.hass.description=${{ needs.prepare.outputs.description }}
+            io.hass.url=${{ needs.prepare.outputs.url }}
+          push: false
+          version: ${{ needs.prepare.outputs.version }}
+
+  build_publish:
+    name: Publish ${{ matrix.arch }} image
+    if: github.event_name == 'push'
+    needs: prepare
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.build_matrix) }}
+    steps:
+      - uses: actions/checkout@v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Build, publish, and sign
+        uses: home-assistant/builder/actions/build-image@2026.06.0
+        with:
+          arch: ${{ matrix.arch }}
+          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          context: "./hindsight"
+          image: ${{ matrix.image }}
+          image-tags: |
+            ${{ needs.prepare.outputs.version }}
+            latest
+          labels: |
+            io.hass.type=app
+            io.hass.name=${{ needs.prepare.outputs.name }}
+            io.hass.description=${{ needs.prepare.outputs.description }}
+            io.hass.url=${{ needs.prepare.outputs.url }}
+          cosign: true
+          push: true
+          version: ${{ needs.prepare.outputs.version }}
+
+  manifest:
+    name: Publish generic manifest
+    if: github.event_name == 'push'
+    needs: [prepare, build_publish]
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      id-token: write
+    steps:
+      - name: Publish and sign single-platform manifest
+        uses: home-assistant/builder/actions/publish-multi-arch-manifest@2026.06.0
+        with:
+          architectures: ${{ needs.prepare.outputs.architectures }}
+          container-registry-password: ${{ secrets.GITHUB_TOKEN }}
+          image-name: ${{ needs.prepare.outputs.image_name }}
+          image-tags: |
+            ${{ needs.prepare.outputs.version }}
+            latest
+          registry-prefix: ${{ needs.prepare.outputs.registry_prefix }}
+          cosign: true
+
+  verify:
+    name: Verify published artifact
+    if: github.event_name == 'push'
+    needs: [prepare, manifest]
+    runs-on: ubuntu-latest
+    permissions: {}
+    env:
+      IMAGE: ${{ needs.prepare.outputs.image }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v4.1.2
+
+      - name: Verify manifests, labels, and signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION_REF="${IMAGE}:${VERSION}"
+          LATEST_REF="${IMAGE}:latest"
+          ARCH_REF="${IMAGE%/*}/amd64-${IMAGE##*/}:${VERSION}"
+
+          docker buildx imagetools inspect "$VERSION_REF" --format '{{json .Manifest}}' > /tmp/version-manifest.json
+          docker buildx imagetools inspect "$LATEST_REF" --format '{{json .Manifest}}' > /tmp/latest-manifest.json
+
+          # BuildKit provenance adds non-runnable unknown/unknown attestation
+          # descriptors. Require exactly one runnable platform (linux/amd64).
+          # Every other descriptor must explicitly be an attestation tied to
+          # that runnable image digest.
+          verify_single_platform_index() {
+            jq -e '
+              ([.manifests[] | select(
+                .platform.os != "unknown" or
+                .platform.architecture != "unknown"
+              )]) as $runnable |
+              ($runnable | length) == 1 and
+              $runnable[0].platform.os == "linux" and
+              $runnable[0].platform.architecture == "amd64" and
+              ($runnable[0].digest) as $image_digest |
+              all(.manifests[];
+                (.platform.os == "linux" and
+                 .platform.architecture == "amd64" and
+                 .digest == $image_digest) or
+                (.platform.os == "unknown" and
+                 .platform.architecture == "unknown" and
+                 .annotations["vnd.docker.reference.type"] == "attestation-manifest" and
+                 .annotations["vnd.docker.reference.digest"] == $image_digest)
+              )
+            ' "$1" >/dev/null
+          }
+          verify_single_platform_index /tmp/version-manifest.json
+          verify_single_platform_index /tmp/latest-manifest.json
+
+          version_digest=$(jq -er '.digest | select(test("^sha256:[0-9a-f]{64}$"))' /tmp/version-manifest.json)
+          latest_digest=$(jq -er '.digest | select(test("^sha256:[0-9a-f]{64}$"))' /tmp/latest-manifest.json)
+          if [[ "$version_digest" != "$latest_digest" ]]; then
+            echo "Version and latest generic references resolve to different digests" >&2
+            exit 1
+          fi
+
+          docker buildx imagetools inspect "$VERSION_REF" --format '{{json .Image}}' > /tmp/image-config.json
+          jq -e --arg version "$VERSION" '
+            (.config.Labels // .config.labels) as $labels |
+            $labels["org.opencontainers.image.source"] == "https://github.com/bonzanni/hindsight-ha-app" and
+            $labels["org.opencontainers.image.title"] == "Hindsight" and
+            $labels["org.opencontainers.image.description"] == "Agent memory (Hindsight) for Home Assistant" and
+            $labels["org.opencontainers.image.licenses"] == "MIT" and
+            $labels["org.opencontainers.image.version"] == $version and
+            $labels["io.hass.type"] == "app" and
+            $labels["io.hass.name"] == "Hindsight" and
+            $labels["io.hass.description"] == "Agent memory (Hindsight) for Home Assistant" and
+            $labels["io.hass.url"] == "https://github.com/bonzanni/hindsight-ha-app" and
+            $labels["io.hass.arch"] == "amd64" and
+            $labels["io.hass.version"] == $version
+          ' /tmp/image-config.json >/dev/null
+
+          identity='^https://github\.com/bonzanni/hindsight-ha-app/\.github/workflows/deploy\.yml@refs/heads/main$'
+          issuer='https://token.actions.githubusercontent.com'
+          cosign verify \
+            --certificate-identity-regexp "$identity" \
+            --certificate-oidc-issuer "$issuer" \
+            "$VERSION_REF" >/dev/null
+          # latest resolves to the same generic digest proven above, so the
+          # version verification covers both generic references. Separately
+          # verify the builder-signed per-architecture image repository.
+          cosign verify \
+            --certificate-identity-regexp "$identity" \
+            --certificate-oidc-issuer "$issuer" \
+            "$ARCH_REF" >/dev/null
+
+  release:
+    name: Create version release
+    if: github.event_name == 'push'
+    needs: [prepare, verify]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Validate release input and notes
+        run: |
+          set -euo pipefail
+          if [[ ! "$VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "Refusing malformed release version: $VERSION" >&2
+            exit 1
+          fi
+          if ! awk -v ver="$VERSION" '
+            $0 == "## " ver { found=1; print; next }
+            found && /^## / { exit }
+            found { print }
+            END { if (!found) exit 42 }
+          ' hindsight/CHANGELOG.md > /tmp/release-notes.md; then
+            echo "Missing exact ## ${VERSION} section in hindsight/CHANGELOG.md" >&2
+            exit 1
+          fi
+          if [[ ! -s /tmp/release-notes.md ]]; then
+            echo "Changelog section for ${VERSION} is empty" >&2
+            exit 1
+          fi
+
+      - name: Create or validate annotated tag
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          tag_object=$(git ls-remote --tags origin "refs/tags/${tag}" | awk '{print $1}')
+          tag_commit=$(git ls-remote --tags origin "refs/tags/${tag}^{}" | awk '{print $1}')
+          if [[ -n "$tag_object" ]]; then
+            tag_commit=${tag_commit:-$tag_object}
+            if [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
+              echo "Release tag ${tag} exists at a different commit (${tag_commit})" >&2
+              exit 1
+            fi
+            echo "Release tag ${tag} already identifies this commit"
+          else
+            git config user.name "bonzanni"
+            git config user.email "3899230+bonzanni@users.noreply.github.com"
+            git tag -a "$tag" "$GITHUB_SHA" -m "Release ${tag}"
+            git push origin "refs/tags/${tag}"
+          fi
+
+      - name: Create missing GitHub release
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "GitHub release ${tag} already exists"
+            exit 0
+          fi
+          gh release create "$tag" \
+            --verify-tag \
+            --title "$tag" \
+            --notes-file /tmp/release-notes.md

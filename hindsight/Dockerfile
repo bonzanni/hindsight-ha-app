@@ -69,6 +69,11 @@ RUN npm exec -- next build \
 
 FROM ${BUILD_FROM}
 
+LABEL org.opencontainers.image.source="https://github.com/bonzanni/hindsight-ha-app" \
+      org.opencontainers.image.title="Hindsight" \
+      org.opencontainers.image.description="Agent memory (Hindsight) for Home Assistant" \
+      org.opencontainers.image.licenses="MIT"
+
 # Runtime deps: nginx + Node 20, the API's native libs, and the shared libraries
 # the COPY-ed python.org CPython 3.11 links against (ssl/ffi/sqlite/bz2/lzma/
 # ncurses/readline/uuid/gdbm/expat). On trixie these provide the .so deps the
@@ -237,5 +242,7 @@ COPY rootfs /
 # Restore exec bits (Windows/WSL checkouts can drop them).
 RUN chmod +x /etc/s6-overlay/scripts/*.sh \
  && find /etc/s6-overlay/s6-rc.d \( -name run -o -name finish -o -name up \) -exec chmod +x {} +
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=90s --retries=3 CMD curl -fsS http://127.0.0.1:8888/health >/dev/null || exit 1
 
 EXPOSE 8888 8099

@@ -13,6 +13,21 @@ entirely on your Home Assistant host.
 - **Storage**: 1 GB base + data growth
 - **OpenRouter account**: Required — get a key at https://openrouter.ai
 
+Hindsight is amd64-only. The pinned upstream image, copied CPython/native
+wheels, and embedded ML assets do not currently provide an aarch64 build.
+
+## Installation and updates
+
+Home Assistant installs the prebuilt, Cosign-signed
+`ghcr.io/bonzanni/hindsight:<version>` image. It does not build the Dockerfile
+on the Home Assistant host. Versioned releases and `latest` are generic OCI
+manifest references that currently resolve to the single supported platform,
+`linux/amd64`.
+
+Updating from `0.2.2` to `0.3.0` changes the delivery mechanism only. Existing
+options remain managed by Supervisor and all Hindsight/pg0 state remains under
+the same `/data` volume, so the update does not reset memory or configuration.
+
 ## Configuration
 
 ### OpenRouter API Key (required)
@@ -84,8 +99,8 @@ from or write to Hindsight memory. The API is also optionally exposed on the
 host network via port 8888 (set a host port in the add-on network configuration
 to enable LAN access).
 
-The `/health` endpoint is used by the Supervisor watchdog and can also be polled
-by dependent add-ons to verify Hindsight is ready.
+The `/health` endpoint is used by the image's Docker health check and can also
+be polled by dependent add-ons to verify Hindsight is ready.
 
 ## Data Persistence and Backups
 
@@ -93,3 +108,7 @@ All memory data — the vector store and the embedded PostgreSQL database — is
 stored under `/data` on the add-on's persistent volume. This
 directory is included in Home Assistant cold backups automatically. Restore a
 backup to move the entire memory store to a new host.
+
+Maintainers performing the real-HAOS AppArmor release gate should follow
+[`APPARMOR_ACCEPTANCE.md`](APPARMOR_ACCEPTANCE.md). Its host cache recovery is
+an exceptional maintainer procedure, not a user troubleshooting step.

@@ -29,6 +29,11 @@ reasoning steps; all memory persists under `/data`.
 5. **Start** the add-on. Once healthy, the memory browser opens from the
    sidebar (brain icon).
 
+> [!NOTE]
+> Home Assistant downloads the prebuilt, Cosign-signed amd64 image from
+> `ghcr.io/bonzanni/hindsight`; installation does not compile Hindsight on the
+> Home Assistant host.
+
 ## Configuration
 
 | Option | Default | What it does |
@@ -51,8 +56,8 @@ http://hindsight:8888
 ```
 
 Point agent add-ons or MCP clients here to retain and recall memory. The
-`/health` endpoint backs the Supervisor watchdog and is safe to poll for
-readiness. Port `8888` can also be mapped to the host for LAN access.
+`/health` endpoint backs the image's Docker health check and is safe to poll
+for readiness. Port `8888` can also be mapped to the host for LAN access.
 
 ## Data & backups
 
@@ -70,6 +75,17 @@ automatically. Restoring a backup moves the entire memory store to a new host.
   control-plane renders under a dynamic ingress prefix with no broken assets.
 
 Both expect Docker on a native Linux/WSL2 filesystem (not `/mnt/c`).
+`hindsight/Dockerfile` remains the build source of truth, so a local image can
+be built directly with `docker build -t hindsight-addon:dev hindsight/`.
+
+To pull and exercise the exact published artifact without rebuilding it, set
+`TEST_IMAGE` for either harness (a digest reference is best for immutable
+release evidence):
+
+```bash
+TEST_IMAGE=ghcr.io/bonzanni/hindsight:0.3.0 make smoke
+TEST_IMAGE=ghcr.io/bonzanni/hindsight:0.3.0 make ingress
+```
 
 ## Architecture
 
@@ -79,9 +95,9 @@ upstream `ghcr.io/vectorize-io/hindsight` image into an HA
 `base-debian:trixie` base (glibc 2.41 — required so pg0's pgvector loads).
 s6-overlay v3 runs an init oneshot (bashio config → env), the upstream
 all-in-one as a non-root user, and an nginx front that adapts the UI for HA
-ingress. See [`docs/superpowers/specs`](docs/superpowers/specs) and
-[`docs/superpowers/plans`](docs/superpowers/plans) for the design and build
-plan.
+ingress. The build details live in [`hindsight/Dockerfile`](hindsight/Dockerfile)
+and the supervised process definitions under
+[`hindsight/rootfs/etc/s6-overlay`](hindsight/rootfs/etc/s6-overlay).
 
 ## License
 

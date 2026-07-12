@@ -10,10 +10,13 @@
 # Playwright runs inside the official image (browsers + system libs preinstalled)
 # on the host network, so no browser deps need installing on the host.
 set -euo pipefail
-cd "$(dirname "$0")/.."
+TESTS_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+cd "$TESTS_DIR/.."
+# shellcheck source=tests/lib/test-image.sh
+source "$TESTS_DIR/lib/test-image.sh"
 
 : "${OPENROUTER_KEY:?Set OPENROUTER_KEY (e.g. from 1Password) to boot the add-on}"
-IMG=hindsight-addon:dev
+IMG=$(test_image_ref)
 DATA="$(pwd)/.devdata"
 PW_VERSION="$(node -e "console.log(require('@playwright/test/package.json').version)" 2>/dev/null || echo 1.60.0)"
 
@@ -21,8 +24,7 @@ cleanup() { docker rm -f hs-smoke ingress-mimic >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 cleanup
 
-echo "== build =="
-docker build -t "$IMG" hindsight/ >/dev/null
+prepare_test_image hindsight/ >/dev/null
 
 echo "== boot add-on =="
 mkdir -p "$DATA"
