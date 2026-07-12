@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.2.1
+
+Fix the real cause of the SIGKILL-on-stop (exit 137) that 0.2.0's shutdown
+tuning did not resolve. The AppArmor profile granted `signal (send)` but not
+`signal (receive)`. Every add-on process (s6-supervise, start-all.sh, the API,
+pg0) runs inside the one `hindsight` profile, and AppArmor checks a signal at
+both ends — so a send-only rule made the kernel return EPERM to the sender and
+SIGTERM never reached `start-all.sh`. On stop, s6 could not signal the app;
+nothing shut down until the Supervisor's kill grace expired (137), which is why
+nightly cold backups always ended in a hard kill. Confirmed on-device: even
+`docker exec -u root … kill -TERM <start-all pid>` returned "Operation not
+permitted". The fix is `signal (send,receive)` in `apparmor.txt`; the 0.2.0
+grace/drain/`timeout` changes are correct and now actually take effect, giving
+a clean ~10s stop. (The 0.2.0 smoke test missed this because a plain
+`docker run` is unconfined — no AppArmor profile is applied.)
+
+- `make lint` now syntax-validates `apparmor.txt` with `apparmor_parser` and
+  asserts the signal rule permits `receive`, so a send-only regression can't
+  ship again.
+
 ## 0.2.0
 
 Recall latency + graceful shutdown, tuned for low-power (N150-class) hosts.

@@ -4,7 +4,15 @@ profile hindsight flags=(attach_disconnected,mediate_deleted) {
   #include <abstractions/base>
 
   file,
-  signal (send) set=(kill,term,int,hup,cont),
+  # s6-supervise, start-all.sh, uvicorn and pg0 all run INSIDE this one profile
+  # and must signal each other on shutdown (s6 -> SIGTERM start-all.sh -> the
+  # API drains + stops pg0). AppArmor mediates a signal at BOTH ends: with a
+  # send-only rule the RECEIVER has no receive permission, so the kernel returns
+  # EPERM to the sender and SIGTERM never reaches start-all.sh — container stop
+  # then hangs until the Supervisor's SIGKILL (exit 137), e.g. every nightly
+  # cold backup. Allow both directions (send-only here was the real 137 cause;
+  # intra-container signalling has no security value, PID namespaces isolate us).
+  signal (send,receive),
   capability fowner,
   capability chown,
   capability dac_override,
