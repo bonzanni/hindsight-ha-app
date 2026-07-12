@@ -63,7 +63,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y apparmor-utils
           grep -Eq '^[[:space:]]*signal[[:space:]]*\([^)]*(send[^)]*receive|receive[^)]*send)[^)]*\)' hindsight/apparmor.txt
-          apparmor_parser -Q hindsight/apparmor.txt
+          apparmor_parser -QK hindsight/apparmor.txt
 
   contract:
     name: Repository contracts

@@ -40,7 +40,7 @@ echo "== pg0 persisted? (cluster PG_VERSION exists on the /data volume) =="
 # pg0 lays its cluster down under instances/<name>/data (name=hindsight).
 PGV="$DATA/.pg0/instances/hindsight/data/PG_VERSION"
 test -f "$PGV" || { echo "FAIL: no pg0 cluster at $PGV"; find "$DATA/.pg0" -maxdepth 3 | head; exit 1; }
-echo "pg0 cluster present: $(cat "$PGV" | tr -d '\n') (PG_VERSION)"
+echo "pg0 cluster present: $(tr -d '\n' < "$PGV") (PG_VERSION)"
 
 echo "== restart keeps data =="
 docker rm -f hs-smoke

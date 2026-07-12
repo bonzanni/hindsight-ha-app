@@ -41,7 +41,7 @@ apparmor: ## Validate apparmor.txt: one signal rule must permit send and receive
 	  END { exit(found ? 0 : 1) }' "$(APPARMOR_PROFILE)" \
 	  || { echo "FAIL: $(APPARMOR_PROFILE) signal rule must permit both 'send' and 'receive'"; exit 1; }
 	@if command -v "$(APPARMOR_PARSER)" >/dev/null 2>&1; then \
-	  "$(APPARMOR_PARSER)" -Q "$(APPARMOR_PROFILE)" >/dev/null && echo "$(APPARMOR_PROFILE): send+receive OK, syntax OK"; \
+	  "$(APPARMOR_PARSER)" -QK "$(APPARMOR_PROFILE)" >/dev/null && echo "$(APPARMOR_PROFILE): send+receive OK, syntax OK"; \
 	else \
 	  echo "$(APPARMOR_PROFILE): send+receive OK ($(APPARMOR_PARSER) absent; syntax check skipped)"; \
 	fi
