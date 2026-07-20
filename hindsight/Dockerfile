@@ -98,11 +98,13 @@ COPY --from=upstream /app/api /app/api
 COPY --from=upstream /app/start-all.sh /app/start-all.sh
 
 # Patch the COPY-ed API (editable install -> source lives at /app/api/hindsight_api):
-# recall handler deadline + configurable worker drain timeout. See the patch
-# header for rationale. patch(1) fails the build if the pinned source drifts,
-# so a HINDSIGHT_IMAGE bump that invalidates the patch cannot ship silently.
-COPY patches/recall-deadline-worker-drain.patch /tmp/hindsight-patches/
+# recall handler deadline + configurable worker drain timeout + reranker-lane
+# contention control. See each patch header for rationale. patch(1) fails the
+# build if the pinned source drifts, so a HINDSIGHT_IMAGE bump that
+# invalidates a patch cannot ship silently.
+COPY patches/recall-deadline-worker-drain.patch patches/rerank-contention.patch /tmp/hindsight-patches/
 RUN patch -p1 -d /app/api < /tmp/hindsight-patches/recall-deadline-worker-drain.patch \
+ && patch -p1 -d /app/api < /tmp/hindsight-patches/rerank-contention.patch \
  && rm -rf /tmp/hindsight-patches
 
 # Control-plane: the placeholder-basePath rebuild (cp-builder), NOT the upstream
@@ -186,28 +188,58 @@ ENV S6_KILL_GRACETIME=5000 \
 #                               20s aiohttp budget (patched-in, see patches/)
 #   WORKER_SHUTDOWN_TIMEOUT=8:  short worker drain so add-on stop beats the
 #                               Supervisor kill grace (patched-in)
+#   CONSOLIDATION_RECALL_RERANKER=rrf: consolidation's internal recalls (one
+#                               per fact, in parallel — measured recall=284s
+#                               per batch) skip the serialized cross-encoder
+#                               lane entirely (RRF ordering; upstream's
+#                               is_passthrough scoring path), so background
+#                               consolidation can't starve interactive
+#                               recalls (patched-in, see patches/)
+#   RERANKER_BUSY_PASSTHROUGH_THRESHOLD=2: one 100-pair rerank is ~6.5s on
+#                               this host, so an interactive recall queueing
+#                               behind >=2 unfinished jobs would blow the 15s
+#                               handler deadline; it degrades to RRF ordering
+#                               instead of 504ing (patched-in)
 ENV OMP_WAIT_POLICY=PASSIVE \
     HINDSIGHT_API_RERANKER_MAX_CANDIDATES=100 \
     HINDSIGHT_API_RERANKER_LOCAL_BUCKET_BATCHING=true \
     HINDSIGHT_API_RERANKER_LOCAL_MAX_CONCURRENT=1 \
     HINDSIGHT_API_WORKER_CONSOLIDATION_MAX_SLOTS=1 \
     HINDSIGHT_API_RECALL_HANDLER_TIMEOUT=15 \
-    HINDSIGHT_API_WORKER_SHUTDOWN_TIMEOUT=8
+    HINDSIGHT_API_WORKER_SHUTDOWN_TIMEOUT=8 \
+    HINDSIGHT_API_CONSOLIDATION_RECALL_RERANKER=rrf \
+    HINDSIGHT_API_RERANKER_BUSY_PASSTHROUGH_THRESHOLD=2
 
 RUN chown -R hindsight:hindsight /app /opt/hindsight
 
 # Build-time smoke: the copied venv must import on this base's python3.11.
 RUN /app/api/.venv/bin/python -c "import torch, sentence_transformers, hindsight_api; print('venv import OK')"
 
-# Build-time smoke: the patched http.py must import (syntax) and actually
-# contain both patched-in env knobs (guards against a partial patch apply).
+# Build-time smoke: the patched modules must import (syntax) and actually
+# contain the patched-in env knobs (guards against a partial patch apply).
 RUN /app/api/.venv/bin/python -c "\
 import inspect; \
 import hindsight_api.api.http as m; \
 src = inspect.getsource(m); \
 assert 'HINDSIGHT_API_RECALL_HANDLER_TIMEOUT' in src, 'recall deadline patch missing'; \
 assert 'HINDSIGHT_API_WORKER_SHUTDOWN_TIMEOUT' in src, 'worker drain patch missing'; \
-print('patched http.py OK')"
+import hindsight_api.engine.memory_engine as me; \
+esrc = inspect.getsource(me); \
+assert 'HINDSIGHT_API_CONSOLIDATION_RECALL_RERANKER' in esrc, 'consolidation passthrough patch missing'; \
+assert 'HINDSIGHT_API_RERANKER_BUSY_PASSTHROUGH_THRESHOLD' in esrc, 'busy-degrade patch missing'; \
+import hindsight_api.engine.cross_encoder as ce; \
+assert 'def pending_jobs' in inspect.getsource(ce), 'reranker occupancy patch missing'; \
+import hindsight_api.engine.consolidation.consolidator as cc; \
+assert '_RERANK_PASSTHROUGH_CTX' in inspect.getsource(cc), 'consolidation ctx patch missing'; \
+print('patched modules OK')"
+
+# Build-time smoke: the rerank occupancy accounting must survive queued-job
+# cancellation, running-job cancellation, and worker exceptions without
+# leaking (reviewer-required regression for the busy-degrade counter; the
+# leaked counter failure mode is permanent degraded ranking until restart).
+COPY build-smoke/rerank_occupancy_smoke.py /tmp/build-smoke/
+RUN /app/api/.venv/bin/python /tmp/build-smoke/rerank_occupancy_smoke.py \
+ && rm -rf /tmp/build-smoke
 
 # Build-time smoke: load embedding model offline from baked HF cache.
 # SentenceTransformer resolves via HF_HOME (no cache_folder arg in upstream source).

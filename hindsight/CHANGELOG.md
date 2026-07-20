@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.4.0
+
+Interactive recalls no longer time out en masse when background consolidation
+runs or several recalls arrive at once. On low-power hosts the local reranker
+is a single serialized lane (~6.5s per recall on an Intel N150), and both
+consolidation's internal recalls and concurrent bursts could queue interactive
+recalls past the 15s deadline (HTTP 504 for 75–80% of recalls during
+consolidation windows).
+
+- Consolidation's internal recalls now skip the neural reranker and use
+  retrieval-fusion (RRF) ordering, so background batches no longer occupy the
+  reranker lane interactive recalls depend on. Consolidation already runs at
+  its own low recall budget and tolerates this ordering by design.
+- A recall that would wait behind two or more unfinished reranker jobs now
+  falls back to RRF ordering instead of queueing toward a certain timeout:
+  slightly coarser ranking, but an answer instead of an error.
+- Both behaviors ship as a new upstream patch (`rerank-contention.patch`),
+  env-gated (`HINDSIGHT_API_CONSOLIDATION_RECALL_RERANKER`,
+  `HINDSIGHT_API_RERANKER_BUSY_PASSTHROUGH_THRESHOLD`) and enabled in the
+  image; unset, upstream behavior is unchanged. Build-time asserts verify the
+  patch applied.
+
+Updating preserves Supervisor options and the existing `/data` PostgreSQL
+volume.
+
 ## 0.3.0
 
 Hindsight now installs from prebuilt, Cosign-signed GHCR images instead of
