@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.1
+
+Raise the recall handler deadline from 15s to 18s. Live measurement of v0.4.0
+showed the second admitted reranker recall in a burst completing at ~14.5s —
+only half a second under the old deadline, so ordinary CPU jitter could still
+turn it into a timeout. 18s keeps failures arriving as fast typed errors while
+staying safely below consumers' 20s client budget. No image content changes
+beyond this environment value.
+
 ## 0.4.0
 
 Interactive recalls no longer time out en masse when background consolidation
