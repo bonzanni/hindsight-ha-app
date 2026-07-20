@@ -184,8 +184,11 @@ ENV S6_KILL_GRACETIME=5000 \
 #   LOCAL_MAX_CONCURRENT=1:     serialize cross-encoder calls — one rerank
 #                               gets all 4 cores; no thread-thrash collapse
 #   CONSOLIDATION_MAX_SLOTS=1:  at most one background consolidation competing
-#   RECALL_HANDLER_TIMEOUT=15:  fail recalls fast (504) before the consumer's
-#                               20s aiohttp budget (patched-in, see patches/)
+#   RECALL_HANDLER_TIMEOUT=18:  fail recalls fast (504) before the consumer's
+#                               20s aiohttp budget (patched-in, see patches/).
+#                               18 not 15: with BUSY_PASSTHROUGH_THRESHOLD=2
+#                               the 2nd admitted CE recall completes ~14.5s
+#                               (measured v0.4.0) — 15 left 0.55s of margin
 #   WORKER_SHUTDOWN_TIMEOUT=8:  short worker drain so add-on stop beats the
 #                               Supervisor kill grace (patched-in)
 #   CONSOLIDATION_RECALL_RERANKER=rrf: consolidation's internal recalls (one
@@ -205,7 +208,7 @@ ENV OMP_WAIT_POLICY=PASSIVE \
     HINDSIGHT_API_RERANKER_LOCAL_BUCKET_BATCHING=true \
     HINDSIGHT_API_RERANKER_LOCAL_MAX_CONCURRENT=1 \
     HINDSIGHT_API_WORKER_CONSOLIDATION_MAX_SLOTS=1 \
-    HINDSIGHT_API_RECALL_HANDLER_TIMEOUT=15 \
+    HINDSIGHT_API_RECALL_HANDLER_TIMEOUT=18 \
     HINDSIGHT_API_WORKER_SHUTDOWN_TIMEOUT=8 \
     HINDSIGHT_API_CONSOLIDATION_RECALL_RERANKER=rrf \
     HINDSIGHT_API_RERANKER_BUSY_PASSTHROUGH_THRESHOLD=2
