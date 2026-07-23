@@ -10,7 +10,7 @@ help: ## Show this help
 setup: ## One-time dev setup (install the git hooks; docs/ is a separate private repo)
 	git config core.hooksPath .githooks
 	@echo "Hooks installed. If you need the private docs, clone them into docs/:"
-	@echo "  git clone git@github.com:bonzanni/hindsight-ha-app-docs.git docs"
+	@echo "  git clone git@github.com:bonzanni/ha-hindsight-app-docs.git docs"
 
 smoke: ## Build + boot smoke test (needs OPENROUTER_KEY in the environment)
 	tests/smoke.sh

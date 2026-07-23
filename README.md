@@ -21,7 +21,7 @@ reasoning steps; all memory persists under `/data`.
 2. Open the **⋮** menu (top-right) → **Repositories**, and add:
 
    ```
-   https://github.com/bonzanni/hindsight-ha-app
+   https://github.com/bonzanni/ha-hindsight-app
    ```
 
 3. The **Hindsight** add-on appears in the store. Click it → **Install**.

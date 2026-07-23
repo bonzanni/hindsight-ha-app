@@ -53,8 +53,8 @@ expect_command_status() {
   fi
 }
 
-expect_file_line 'config version is exactly 0.4.1' \
-  '^version:[[:space:]]*"0\.4\.1"[[:space:]]*$' hindsight/config.yaml
+expect_file_line 'config version is exactly 0.4.2' \
+  '^version:[[:space:]]*"0\.4\.2"[[:space:]]*$' hindsight/config.yaml
 expect_file_line 'config uses the generic GHCR image' \
   '^image:[[:space:]]*"ghcr\.io/bonzanni/hindsight"[[:space:]]*$' hindsight/config.yaml
 expect_absent 'config does not restate the default startup mode' \
@@ -89,7 +89,7 @@ expect_file_line 'Dockerfile keeps the upstream digest pin' \
 expect_file_line 'Dockerfile keeps the upstream source lockstep ref' \
   '^ARG HINDSIGHT_REF=779e3140c8faeb3d6662e64bff7b908e9e29c989$' hindsight/Dockerfile
 expect_file_line 'Dockerfile has the OCI source label' \
-  'org\.opencontainers\.image\.source="https://github\.com/bonzanni/hindsight-ha-app"' hindsight/Dockerfile
+  'org\.opencontainers\.image\.source="https://github\.com/bonzanni/ha-hindsight-app"' hindsight/Dockerfile
 expect_file_line 'Dockerfile has the OCI title label' \
   'org\.opencontainers\.image\.title="Hindsight"' hindsight/Dockerfile
 expect_file_line 'Dockerfile has the OCI description label' \

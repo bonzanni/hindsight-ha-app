@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.2
+
+Repository renamed to https://github.com/bonzanni/ha-hindsight-app (was
+bonzanni/hindsight-ha-app; GitHub redirects the old URL, but new installs
+should use the new one). Updated the OCI source label, the release
+pipeline's label and signature-identity checks, and the documented store
+URL to match. No functional changes to the add-on itself.
+
 ## 0.4.1
 
 Raise the recall handler deadline from 15s to 18s. Live measurement of v0.4.0

@@ -69,7 +69,7 @@ RUN npm exec -- next build \
 
 FROM ${BUILD_FROM}
 
-LABEL org.opencontainers.image.source="https://github.com/bonzanni/hindsight-ha-app" \
+LABEL org.opencontainers.image.source="https://github.com/bonzanni/ha-hindsight-app" \
       org.opencontainers.image.title="Hindsight" \
       org.opencontainers.image.description="Agent memory (Hindsight) for Home Assistant" \
       org.opencontainers.image.licenses="MIT"

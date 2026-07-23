@@ -1,5 +1,5 @@
 {
-  "name": "hindsight-ha-app-tests",
+  "name": "ha-hindsight-app-tests",
   "private": true,
   "description": "Dev/test harness for the Hindsight Home Assistant add-on (not shipped in the image).",
   "scripts": {

@@ -80,7 +80,7 @@ not a private address — GitHub blocks pushing the private email.
 
 ## The `docs/` boundary — READ THIS
 `docs/` is an **intentionally-private, separate inner git repo** (its own
-`docs/.git` with the private remote `bonzanni/hindsight-ha-app-docs`). It is
+`docs/.git` with the private remote `bonzanni/ha-hindsight-app-docs`). It is
 **gitignored by this public add-on repo and is NEVER shipped here.** It holds
 the internal design spec, implementation plan, and upstream recon notes.
 
