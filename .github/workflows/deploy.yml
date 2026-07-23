@@ -296,7 +296,7 @@ jobs:
           docker buildx imagetools inspect "$VERSION_REF" --format '{{json .Image}}' > /tmp/image-config.json
           jq -e --arg version "$VERSION" '
             (.config.Labels // .config.labels) as $labels |
-            $labels["org.opencontainers.image.source"] == "https://github.com/bonzanni/hindsight-ha-app" and
+            $labels["org.opencontainers.image.source"] == "https://github.com/bonzanni/ha-hindsight-app" and
             $labels["org.opencontainers.image.title"] == "Hindsight" and
             $labels["org.opencontainers.image.description"] == "Agent memory (Hindsight) for Home Assistant" and
             $labels["org.opencontainers.image.licenses"] == "MIT" and
@@ -304,12 +304,12 @@ jobs:
             $labels["io.hass.type"] == "app" and
             $labels["io.hass.name"] == "Hindsight" and
             $labels["io.hass.description"] == "Agent memory (Hindsight) for Home Assistant" and
-            $labels["io.hass.url"] == "https://github.com/bonzanni/hindsight-ha-app" and
+            $labels["io.hass.url"] == "https://github.com/bonzanni/ha-hindsight-app" and
             $labels["io.hass.arch"] == "amd64" and
             $labels["io.hass.version"] == $version
           ' /tmp/image-config.json >/dev/null
 
-          identity='^https://github\.com/bonzanni/hindsight-ha-app/\.github/workflows/deploy\.yml@refs/heads/main$'
+          identity='^https://github\.com/bonzanni/ha-hindsight-app/\.github/workflows/deploy\.yml@refs/heads/main$'
           issuer='https://token.actions.githubusercontent.com'
           cosign verify \
             --certificate-identity-regexp "$identity" \

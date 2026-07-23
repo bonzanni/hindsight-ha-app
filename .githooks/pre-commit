@@ -2,7 +2,7 @@
 # Leak guard: never let the private docs/ tree be committed into this PUBLIC add-on repo.
 #
 # docs/ is an intentionally-private, separate inner git repo (its own remote,
-# bonzanni/hindsight-ha-app-docs) and is gitignored here. The only ways it could
+# bonzanni/ha-hindsight-app-docs) and is gitignored here. The only ways it could
 # leak into a public commit are `git add -f docs/` or removing the .gitignore
 # line. This hook refuses any commit that stages docs/.
 #
